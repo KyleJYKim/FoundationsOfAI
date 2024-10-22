@@ -49,7 +49,7 @@ sudoku = np.array(
 #     [[0 for _ in range(BOARD_LEN)] for _ in range(BOARD_LEN)]
 # )
 
-def solveSudoku_simulatedAnnealing(sudoku, failCount = 0, initialTemp = 1, coolingRate = 0.95, maxIteration = 2000):
+def solveSudoku_simulatedAnnealing(sudoku, initialTemp = 1, coolingRate = 0.95, maxIteration = 2000):
     
     def getPossibleValuePool(currentState, rowIdx, colIdx):
         possibleValuePool = [True]*BOARD_LEN
@@ -103,32 +103,28 @@ def solveSudoku_simulatedAnnealing(sudoku, failCount = 0, initialTemp = 1, cooli
         
         return currentState, newlyAssigned, availability
     
-    # Decide whether to accept the new state
-    # if delta_e < 0 or random.random() < math.exp(-delta_e / temperature):
-    #     current_state = neighbor_state[:]
-    #     current_conflicts = neighbor_conflicts
     
-    def exploreState(currentState, temperature, iteration):
+    def exploreState(currentState, temperature = initialTemp, iteration = 0, branchLevel = 0):
         stateChanged = True
         
         # Check maximum iteration
         if iteration > maxIteration:
-            return currentState, temperature, iteration, False
+            return currentState, temperature, iteration, branchLevel, False
         
         while stateChanged:
-            # Check if there are certain-valued boxes and update them.
+            # Check if there are boxes with one-possible-value and update them.
             currentState, allPossibleValuePool, stateChanged, stateAvailable = travelEmptyBoxes(currentState)
             temperature *= coolingRate
         
         # Check availability, i.e., if a branch is stuck.
         if not stateAvailable:
-                return  currentState, temperature, iteration + 1, False # Finish a branch
+                return  currentState, temperature, iteration + 1, branchLevel, False # Finish a branch
             
         if currentState.sum() == sum(range(1,10))*9:
-                return  currentState, temperature, iteration + 1, True  # Success
+                return  currentState, temperature, iteration + 1, branchLevel, True  # Success
         
         # Keep digging in, i.e., check out all the possible branches.
-        return travelWithPossibleStates(allPossibleValuePool, currentState, temperature, iteration)
+        return travelWithPossibleStates(allPossibleValuePool, currentState, temperature, iteration, branchLevel)
         
     
     def travelEmptyBoxes(currentState):
@@ -155,7 +151,8 @@ def solveSudoku_simulatedAnnealing(sudoku, failCount = 0, initialTemp = 1, cooli
         return currentState, allPossibleValuePool, stateChanged, stateAvailable
     
     
-    def travelWithPossibleStates(allPossibleValuePool, state, temperature, iteration):
+    def travelWithPossibleStates(allPossibleValuePool, state, temperature, iteration, branchLevel):
+        branchLevel += 1
         currentState = state.copy()
         costs = dict()
         
@@ -166,9 +163,9 @@ def solveSudoku_simulatedAnnealing(sudoku, failCount = 0, initialTemp = 1, cooli
                 
                 cost = allPossibleValuePool[rowIdx][colIdx].count(True)
                 costs.update({(rowIdx, colIdx): cost})
-            
-        costs = dict(sorted(costs.items(), key=lambda item: item[1]))
         
+        # Sort coordinations by cost.
+        costs = dict(sorted(costs.items(), key=lambda item: item[1]))
         
         # Give chance in to higher cost values to come before lower cost values.
         lowestCost = list(costs.values())[0]
@@ -189,97 +186,42 @@ def solveSudoku_simulatedAnnealing(sudoku, failCount = 0, initialTemp = 1, cooli
         for boxCoord in costs.keys():
             for possibilityIdx in range(BOARD_LEN):
                 if allPossibleValuePool[boxCoord[0]][boxCoord[1]][possibilityIdx] == True:
+                    # The possible branches
                     possibleState = currentState.copy()
                     possibleState[boxCoord[0]][[boxCoord[1]]] = possibilityIdx + 1
-                    # The possibility branch
-                    
-                    # print(len(costs), iteration)
-                    
-                    newState, newTemperature, iteration, success = exploreState(possibleState, temperature, iteration)
-                    
-                    
-                    # print(possibleState)
-                    # print(success)
-                    # print(newState)
-                    # print() 
+                    newState, newTemperature, iteration, newBranchLevel, success = exploreState(possibleState, temperature, iteration, branchLevel)
                     
                     if success or iteration > maxIteration:
                         print(currentState)
                         currentState = newState
                         temperature = newTemperature
+                        branchLevel = newBranchLevel
                 if success or iteration > maxIteration: break
-                
             if success or iteration > maxIteration: break
-            # else:
-            #     print(currentState)
-            #     print()
         
-        #print(success, ": finishing traveling")
-        
-        return currentState, temperature, iteration, success
+        return currentState, temperature, iteration, branchLevel, success
     
-    # Iterating
-    success = False
-    iteration = 0
-    state = sudoku.copy()
-    #allPossibleValuePool = [[[]]]
-    temperature = initialTemp
-    #temperature *= coolingRate
     
     # "box means empty box."
-    # First, get the possible values for a box.
+    # First, get the possible values for each box.
     # If there is only one value, assign it and 
-    # If there is none, choose the box with lowest possible values and try them (this is where probability gives in the possibility of choosing higher cost ones)
+    # if there is none, choose the box with lowest possible values and try them 
+    # (this is where probability gives in the possibility of choosing higher cost (worse) ones)
     
     # Let's roll
-    state, temperature, iteration, success = exploreState(state, temperature, iteration)
-    print(f"Result:\n{state}\ntemperature: {temperature}\niteration: {iteration}\nsuccess: {success}")
+    state, temperature, iteration, branchLevel, success = exploreState(sudoku.copy())
+    print(f"Result:\n{state}\ntemperature: {temperature}\niteration: {iteration}\nlevel of branch: {branchLevel}\nsuccess: {success}")
     
-    #state[0][4] = 5
-    countOriginal = 0
-    countState = 0
-    for rowIdx in range(BOARD_LEN):
-        for colIdx in range(BOARD_LEN):
-            if state[rowIdx][colIdx] == 0:
-                countState += 1
-            if sudoku[rowIdx][colIdx] == 0:
-                countOriginal += 1
-    print(f"number of boxes: {countState} / {countOriginal}") # x / 43
-    print(f"fail count: {failCount}")
+    # countOriginal = 0
+    # countState = 0
+    # for rowIdx in range(BOARD_LEN):
+    #     for colIdx in range(BOARD_LEN):
+    #         if state[rowIdx][colIdx] == 0:
+    #             countState += 1
+    #         if sudoku[rowIdx][colIdx] == 0:
+    #             countOriginal += 1
+    # print(f"number of boxes: {countState} / {countOriginal}")
     
     
 # The initiating point
 solveSudoku_simulatedAnnealing(sudoku)
-
-# background: algorithm, screenshots, samples with different levels, optimization, explaining code
-
-# d = dict({1:11, 2:22, 3:33})
-# print(d[0])
-# for dd in list(d.values())[:-1]:
-#     print(dd)
-
-
-# costs = dict()
-# tf = [[[0 for _ in range(BOARD_LEN)] for _ in range(BOARD_LEN)] for _ in range(BOARD_LEN)]
-# #tf = [[False]*BOARD_LEN]*BOARD_LEN
-# for rowIdx in range(BOARD_LEN):
-#     for colIdx in range(BOARD_LEN):
-#         if sudoku[rowIdx][colIdx] != 0:
-#             continue
-        
-#         #print(tf[rowIdx][colIdx])
-#         #tf[rowIdx][colIdx] = True
-        
-#         costs.update({(rowIdx, colIdx): colIdx % 3})
-#         costs = dict(sorted(costs.items(), key=lambda item: item[1]))
-        
-# keys = costs.keys()
-# tfCheck = np.array(tf).flatten()
-# print(np.array(tf))
-# print(tfCheck.prod())
-# mtrx = [[1,2,3,4,5,6,7,8,9]]*9
-# mtrxCheck = np.array(mtrx)
-# print(mtrxCheck.sum())
-# print(sum(range(1,10))*9)
-# for k in keys:
-#     print(k[0])
